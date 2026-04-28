@@ -35,9 +35,8 @@ class OcgCoreWrapper:
         system = platform.system()
         try:
             if system == "Windows":
-                # User specified that it's highly likely stdcall for this 32-bit DLL
                 self.lib = ctypes.WinDLL(lib_path)
-                print(f"Successfully loaded library via WinDLL (stdcall): {lib_path}")
+                print(f"Successfully loaded library via WinDLL: {lib_path}")
             elif system == "Linux":
                 self.lib = ctypes.CDLL(lib_path, mode=ctypes.RTLD_GLOBAL)
             else:
@@ -46,14 +45,11 @@ class OcgCoreWrapper:
             raise RuntimeError(f"Failed to load ocgcore library: {e}")
 
     def _find_func(self, name):
-        """Intelligently search for mangled names on 32-bit Windows."""
-        # Try exact name
+        """Search for mangled names on 32-bit Windows."""
         try:
             return getattr(self.lib, name)
         except AttributeError:
             pass
-
-        # Try mangled name pattern: _name@X
         if platform.system() == "Windows":
             for i in range(0, 65, 4):
                 mangled = f"_{name}@{i}"
@@ -63,66 +59,64 @@ class OcgCoreWrapper:
                     continue
         return None
 
-    def _safe_bind(self, name, argtypes, restype):
-        """Helper to safely bind a C function with mangling resolution."""
+    def _safe_bind(self, name, argtypes=None, restype=None):
         func = self._find_func(name)
         if func:
-            try:
-                func.argtypes = argtypes
-                func.restype = restype
-                setattr(self, f"_{name}", func)
-                return True
-            except Exception as e:
-                print(f"Warning: Failed to set signatures for function '{name}': {e}")
-        else:
-            print(f"Warning: function '{name}' (or mangled variants) not found in library.")
+            if argtypes is not None: func.argtypes = argtypes
+            if restype is not None: func.restype = restype
+            setattr(self, f"_{name}", func)
+            return True
         return False
 
     def _setup_bindings(self):
-        self._safe_bind("set_card_reader", [ctypes.CFUNCTYPE(ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(CardData))], None)
-        self._safe_bind("set_script_reader", [ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_int))], None)
-        self._safe_bind("set_log_handler", [ctypes.CFUNCTYPE(None, ctypes.c_char_p, ctypes.c_int)], None)
-        self._safe_bind("create_duel", [ctypes.c_uint32], ctypes.c_void_p)
-        self._safe_bind("start_duel", [ctypes.c_void_p, ctypes.c_int32], None)
-        self._safe_bind("end_duel", [ctypes.c_void_p], None)
-        self._safe_bind("set_player_info", [ctypes.c_void_p, ctypes.c_int32, ctypes.c_int32, ctypes.c_int32, ctypes.c_int32], None)
-        self._safe_bind("new_card", [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint8, ctypes.c_uint8, ctypes.c_uint8, ctypes.c_uint8, ctypes.c_uint8], None)
-        self._safe_bind("process", [ctypes.c_void_p], ctypes.c_int32)
-        self._safe_bind("get_message", [ctypes.c_void_p, ctypes.POINTER(ctypes.c_byte)], ctypes.c_int32)
-        self._safe_bind("set_responsei", [ctypes.c_void_p, ctypes.c_int32], None)
-        self._safe_bind("set_responseb", [ctypes.c_void_p, ctypes.POINTER(ctypes.c_byte)], None)
+        # New OCG API Mapping
+        self._safe_bind("OCG_CreateDuel", restype=ctypes.c_void_p)
+        self._safe_bind("OCG_DestroyDuel", argtypes=[ctypes.c_void_p])
+        self._safe_bind("OCG_StartDuel", argtypes=[ctypes.c_void_p, ctypes.c_int32])
+        self._safe_bind("OCG_DuelProcess", argtypes=[ctypes.c_void_p], restype=ctypes.c_int32)
+        self._safe_bind("OCG_DuelGetMessage", argtypes=[ctypes.c_void_p, ctypes.POINTER(ctypes.c_byte)], restype=ctypes.c_int32)
+        self._safe_bind("OCG_DuelNewCard", argtypes=[ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint8, ctypes.c_uint8, ctypes.c_uint8, ctypes.c_uint8, ctypes.c_uint8])
+        self._safe_bind("OCG_DuelSetResponse", argtypes=[ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int32])
 
-    # Exposed methods
+    # Exposed methods mapped to the new API
     def create_duel(self, seed):
-        if hasattr(self, "_create_duel"): return self._create_duel(seed)
+        if hasattr(self, "_OCG_CreateDuel"): return self._OCG_CreateDuel(seed)
         return None
+
     def start_duel(self, pduel, options=0):
-        if hasattr(self, "_start_duel"): self._start_duel(pduel, options)
+        if hasattr(self, "_OCG_StartDuel"): self._OCG_StartDuel(pduel, options)
+
     def end_duel(self, pduel):
-        if hasattr(self, "_end_duel"): self._end_duel(pduel)
-    def set_player_info(self, pduel, playerid, lp, startcount, drawcount):
-        if hasattr(self, "_set_player_info"): self._set_player_info(pduel, playerid, lp, startcount, drawcount)
-    def new_card(self, pduel, code, owner, playerid, location, sequence, position):
-        if hasattr(self, "_new_card"): self._new_card(pduel, code, owner, playerid, location, sequence, position)
+        if hasattr(self, "_OCG_DestroyDuel"): self._OCG_DestroyDuel(pduel)
+
     def process(self, pduel):
-        if hasattr(self, "_process"): return self._process(pduel)
+        if hasattr(self, "_OCG_DuelProcess"): return self._OCG_DuelProcess(pduel)
         return 0
+
     def get_message(self, pduel, buffer):
-        if hasattr(self, "_get_message"): return self._get_message(pduel, buffer)
+        if hasattr(self, "_OCG_DuelGetMessage"): return self._OCG_DuelGetMessage(pduel, buffer)
         return 0
+
+    def new_card(self, pduel, code, owner, playerid, location, sequence, position):
+        if hasattr(self, "_OCG_DuelNewCard"):
+            self._OCG_DuelNewCard(pduel, code, owner, playerid, location, sequence, position)
+
     def set_responsei(self, pduel, value):
-        if hasattr(self, "_set_responsei"): self._set_responsei(pduel, value)
+        if hasattr(self, "_OCG_DuelSetResponse"):
+            # Pack integer into bytes for the uniform response function
+            v = ctypes.c_int32(value)
+            self._OCG_DuelSetResponse(pduel, ctypes.byref(v), ctypes.sizeof(v))
+
     def set_responseb(self, pduel, buffer):
-        if hasattr(self, "_set_responseb"): self._set_responseb(pduel, buffer)
-    def set_card_reader(self, callback):
-        self._card_reader_cb = callback
-        if hasattr(self, "_set_card_reader"): self._set_card_reader(callback)
-    def set_script_reader(self, callback):
-        self._script_reader_cb = callback
-        if hasattr(self, "_set_script_reader"): self._set_script_reader(callback)
-    def set_log_handler(self, callback):
-        self._log_handler_cb = callback
-        if hasattr(self, "_set_log_handler"): self._set_log_handler(callback)
+        if hasattr(self, "_OCG_DuelSetResponse"):
+            # Assume buffer is already a ctypes array or buffer
+            self._OCG_DuelSetResponse(pduel, buffer, len(buffer))
+
+    # Compatibility Stubs (Now internal to engine)
+    def set_card_reader(self, callback): pass
+    def set_script_reader(self, callback): pass
+    def set_log_handler(self, callback): pass
+    def set_player_info(self, pduel, playerid, lp, startcount, drawcount): pass
 
     def _get_default_lib_path(self):
         system = platform.system()
