@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+bin/
+lib/
+lib64/
+engine/*.dll
+engine/*.so
+engine/*.dylib
+data/*.cdb
+data/*.conf
+decks/test_deck.ydk
