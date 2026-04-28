@@ -1,68 +1,53 @@
-import sys
 import os
+import sys
 from wrapper import OcgCoreWrapper
 from data_loader import DataLoader
+from arena import ArenaController
 
 def main():
-    print("YGO Arena - Phase 1 Verification (Updated)")
-    print("-" * 40)
+    print("Yu-Gi-Oh! AI Arena Simulator")
+    print("=" * 30)
 
-    # 1. Test Project Structure
-    print("Checking directories...")
-    for d in ['engine', 'data', 'decks', 'src']:
-        if os.path.exists(d):
-            print(f" [OK] {d}/")
-        else:
-            print(f" [MISSING] {d}/")
-
-    # 2. Test Data Loader
-    print("\nTesting DataLoader...")
-
-    # Create dummy files for testing
-    dummy_ydk = "decks/test_deck.ydk"
-    with open(dummy_ydk, "w") as f:
-        f.write("#main\n46986414\n46986414\n46986414\n#extra\n!side\n")
-
-    dummy_strings = "data/strings.conf"
-    with open(dummy_strings, "w", encoding='utf-8') as f:
-        f.write("!system 100 First Player\n!system 101 Second Player\n")
-
-    loader = DataLoader(strings_path=dummy_strings)
-
-    # Test YDK Parser
+    # 1. Initialize Infrastructure
     try:
-        deck = loader.parse_ydk(dummy_ydk)
-        print(f" [OK] YDK Parser: Parsed {len(deck['main'])} cards from {dummy_ydk}.")
-    except Exception as e:
-        print(f" [FAIL] YDK Parser: {e}")
-
-    # Test Strings Parser
-    try:
-        strings = loader.load_system_strings()
-        if strings.get(100) == "First Player":
-            print(f" [OK] Strings Parser: Correctly loaded system strings.")
-        else:
-            print(f" [FAIL] Strings Parser: Could not find expected string ID 100.")
-    except Exception as e:
-        print(f" [FAIL] Strings Parser: {e}")
-
-    # Test DB Connection (Graceful failure expected without real CDB)
-    print("\nTesting CDB Access (Expected to fail gracefully without real data/cards.cdb)...")
-    data = loader.get_card_data(46986414)
-    if data:
-        print(f" [OK] CDB Access: Found card data.")
-    else:
-        print(f" [INFO] CDB Access: Card not found or DB missing (Expected).")
-
-    # 3. Test OcgCoreWrapper
-    print("\nTesting OcgCoreWrapper...")
-    try:
+        loader = DataLoader()
         wrapper = OcgCoreWrapper()
-        print(" [OK] OcgCoreWrapper initialized (Library found!)")
-    except FileNotFoundError as e:
-        print(f" [INFO] OcgCoreWrapper: Library file not found (Expected if not yet provided).")
     except Exception as e:
-        print(f" [FAIL] OcgCoreWrapper: {e}")
+        print(f"Error during initialization: {e}")
+        # In a real scenario we'd exit, but for the task we continue to show the logic
+        # sys.exit(1)
+        wrapper = None
+
+    # 2. Load Decks
+    decks_dir = 'decks'
+    if not os.path.exists(decks_dir):
+        os.makedirs(decks_dir)
+
+    # Create test deck if none exists
+    test_deck_path = os.path.join(decks_dir, 'test_deck.ydk')
+    if not os.path.exists(test_deck_path):
+        with open(test_deck_path, 'w') as f:
+            f.write("#main\n46986414\n46986414\n46986414\n#extra\n!side\n")
+
+    decks = DataLoader.load_all_decks(decks_dir)
+    if not decks:
+        print("No decks found in decks/ folder.")
+        return
+
+    deck_names = list(decks.keys())
+    deck0 = decks[deck_names[0]]
+    deck1 = decks[deck_names[0]] # Play against itself for testing
+
+    print(f"Loaded {len(decks)} decks.")
+    print(f"Matchup: {deck_names[0]} vs {deck_names[0]}")
+
+    # 3. Run Arena
+    if wrapper:
+        arena = ArenaController(wrapper, loader)
+        arena.run_simulation(deck0, deck1, num_duels=10)
+    else:
+        print("\n[SKIP] Arena simulation skipped because ocgcore library was not found.")
+        print("Please place ocgcore.dll/libocgcore.so in the 'engine/' folder to run duels.")
 
 if __name__ == "__main__":
     main()
