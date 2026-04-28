@@ -1,23 +1,7 @@
 import ctypes
+from ctypes import c_void_p, c_int, c_uint32, c_byte, POINTER, byref, sizeof
 import os
 import platform
-import sys
-
-class CardData(ctypes.Structure):
-    _fields_ = [
-        ("code", ctypes.c_uint32),
-        ("alias", ctypes.c_uint32),
-        ("setcode", ctypes.c_uint64),
-        ("type", ctypes.c_uint32),
-        ("level", ctypes.c_uint32),
-        ("attribute", ctypes.c_uint32),
-        ("race", ctypes.c_uint32),
-        ("attack", ctypes.c_int32),
-        ("defense", ctypes.c_int32),
-        ("lscale", ctypes.c_uint32),
-        ("rscale", ctypes.c_uint32),
-        ("link_marker", ctypes.c_uint32),
-    ]
 
 class OcgCoreWrapper:
     def __init__(self, lib_path=None):
@@ -69,50 +53,54 @@ class OcgCoreWrapper:
         return False
 
     def _setup_bindings(self):
-        # New OCG API Mapping
-        self._safe_bind("OCG_CreateDuel", restype=ctypes.c_void_p)
-        self._safe_bind("OCG_DestroyDuel", argtypes=[ctypes.c_void_p])
-        self._safe_bind("OCG_StartDuel", argtypes=[ctypes.c_void_p, ctypes.c_int32])
-        self._safe_bind("OCG_DuelProcess", argtypes=[ctypes.c_void_p], restype=ctypes.c_int32)
-        self._safe_bind("OCG_DuelGetMessage", argtypes=[ctypes.c_void_p, ctypes.POINTER(ctypes.c_byte)], restype=ctypes.c_int32)
-        self._safe_bind("OCG_DuelNewCard", argtypes=[ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint8, ctypes.c_uint8, ctypes.c_uint8, ctypes.c_uint8, ctypes.c_uint8])
-        self._safe_bind("OCG_DuelSetResponse", argtypes=[ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int32])
+        # Strict Signature Definitions for modern OCG API
+        self._safe_bind("OCG_CreateDuel", argtypes=[c_uint32], restype=c_void_p)
+        self._safe_bind("OCG_DestroyDuel", argtypes=[c_void_p], restype=None)
+        self._safe_bind("OCG_StartDuel", argtypes=[c_void_p, c_int], restype=None)
+        self._safe_bind("OCG_DuelProcess", argtypes=[c_void_p], restype=c_int)
+        self._safe_bind("OCG_DuelGetMessage", argtypes=[c_void_p, c_void_p], restype=c_int)
+        self._safe_bind("OCG_DuelNewCard", argtypes=[c_void_p, c_uint32, c_byte, c_byte, c_byte, c_byte, c_byte], restype=None)
+        self._safe_bind("OCG_DuelSetResponse", argtypes=[c_void_p, c_void_p, c_int], restype=None)
 
     # Exposed methods mapped to the new API
     def create_duel(self, seed):
-        if hasattr(self, "_OCG_CreateDuel"): return self._OCG_CreateDuel(seed)
+        if hasattr(self, "_OCG_CreateDuel"):
+            return self._OCG_CreateDuel(c_uint32(seed))
         return None
 
     def start_duel(self, pduel, options=0):
-        if hasattr(self, "_OCG_StartDuel"): self._OCG_StartDuel(pduel, options)
+        if hasattr(self, "_OCG_StartDuel"):
+            self._OCG_StartDuel(pduel, c_int(options))
 
     def end_duel(self, pduel):
-        if hasattr(self, "_OCG_DestroyDuel"): self._OCG_DestroyDuel(pduel)
+        if hasattr(self, "_OCG_DestroyDuel"):
+            self._OCG_DestroyDuel(pduel)
 
     def process(self, pduel):
-        if hasattr(self, "_OCG_DuelProcess"): return self._OCG_DuelProcess(pduel)
+        if hasattr(self, "_OCG_DuelProcess"):
+            return self._OCG_DuelProcess(pduel)
         return 0
 
     def get_message(self, pduel, buffer):
-        if hasattr(self, "_OCG_DuelGetMessage"): return self._OCG_DuelGetMessage(pduel, buffer)
+        if hasattr(self, "_OCG_DuelGetMessage"):
+            return self._OCG_DuelGetMessage(pduel, buffer)
         return 0
 
     def new_card(self, pduel, code, owner, playerid, location, sequence, position):
         if hasattr(self, "_OCG_DuelNewCard"):
-            self._OCG_DuelNewCard(pduel, code, owner, playerid, location, sequence, position)
+            self._OCG_DuelNewCard(pduel, c_uint32(code), c_byte(owner), c_byte(playerid),
+                                 c_byte(location), c_byte(sequence), c_byte(position))
 
     def set_responsei(self, pduel, value):
         if hasattr(self, "_OCG_DuelSetResponse"):
-            # Pack integer into bytes for the uniform response function
-            v = ctypes.c_int32(value)
-            self._OCG_DuelSetResponse(pduel, ctypes.byref(v), ctypes.sizeof(v))
+            v = c_int(value)
+            self._OCG_DuelSetResponse(pduel, byref(v), sizeof(v))
 
     def set_responseb(self, pduel, buffer):
         if hasattr(self, "_OCG_DuelSetResponse"):
-            # Assume buffer is already a ctypes array or buffer
             self._OCG_DuelSetResponse(pduel, buffer, len(buffer))
 
-    # Compatibility Stubs (Now internal to engine)
+    # Compatibility Stubs
     def set_card_reader(self, callback): pass
     def set_script_reader(self, callback): pass
     def set_log_handler(self, callback): pass
